@@ -1,0 +1,212 @@
+---
+title: "predicting_house_prices"
+author: "Louis Gruand"
+date: '2018-10-30'
+output: html_document
+---
+Disclaimer: The "we" that I use in this assignment just refers to me, myself and I, I was taught to use we instead of I while writing papers and other documents, habit that I have kept to this day. (the last 5 I that youre gonna read in this essay, 6 with the one I just used)
+
+## Libraries and DATA IMPORTATION
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(MASS)
+library(jtools)
+realestate <- read.csv("realestate.csv")
+```
+## INTRODUCTION
+
+The dataset given provides us with some information on real estate properties, including the price and physical characteristics of the assets. As the price of a house is dependent on the physical characteristics of the asset, as well as its location (which is not represented in this dataset) and other external factors, we would like to see how accurately we can predict the price of a house using physical characteristics.
+
+## Exploratory Data Analysis
+```{r}
+dim(realestate)
+#522 rows 12 cols
+names(realestate)
+head(realestate)
+
+##we'll start by removing the ID value, which is useless -> same as rown number:
+realestate <- realestate %>% 
+  select(-ID)
+
+glimpse(realestate)
+
+
+```
+There are 522 observations. 12 variables at first but we removed ID so only 11 remaining. 
+The quantitative variables are the following: 
+Price, Sqft, Bedroom, Bathroom, Garage (we assume the number given is the number of spots in the garage), YearBuild, Lot. Yearbuild is a date however, and Lot might be a descriptive variable (although unlikely with the high number of values that it takes) since we dont have data explaining it. 
+The qualitative variables(describe a state):
+Airconditioning, Garage, Pool, Quality, AdjHighway
+```{r}
+#To check the variables are qualitatives, lets see if they take on a lot of values (qualitative variables tend to take much less values than quantitative ones)
+qual <- c("Airconditioning","Pool","Quality","AdjHighway")
+lapply(realestate[,qual],unique)
+```
+However, looking at the type of values in the dataset:
+```{r}
+sapply(realestate,class)
+```
+We find that all the variables are integers, when it is absolutely not true for the qualitative variables, which should be factors (e.g: a quality value of 2 isnt twice as good/important than a quality value of 1):
+```{r}
+realestate <- realestate %>% 
+  mutate_at(vars(qual),as.factor)
+sapply(realestate,class)
+```
+Let's look at different plots. First, the most obvious: We should see a more or less linear relationship between Sqft and Price -> The bigger the house, the more expensive it should be (other factors held constant).
+```{r}
+ggplot(data = realestate, aes(x = Sqft, y = Price)) + geom_point(alpha=.125)
+```
+Indeed it is true. We find that Indeed price goes up as Sqft goes up. Funnily enough, as Sqft goes up, the variance of the Price also goes up, taking "extremely" high and low values for relatively similar Sqft -> that's where the other factors will explain more variability in price!
+
+```{r}
+names(realestate)
+ggplot(realestate, aes(x = AdjHighway, y = Price)) + theme_bw() + geom_bar(stat = "identity")
+
+#Are there a lot of different Quality values?
+ggplot(realestate, aes(factor(Quality))) + geom_bar()
+names(realestate)
+
+# Use single color
+ggplot(realestate, aes(x=AdjHighway, y=Price)) +
+  geom_boxplot(fill='#A4A4A4', color="black")+
+  theme_classic()
+
+#how to do that?
+ggplot(realestate, aes(factor(AdjHighway)),y = Frequency) + geom_bar(stat="identity") + geom_text(size = 3, position = position_stack(vjust = 0.5))
+
+realestate %>% 
+  filter(AdjHighway==1) %>% 
+  summarise(count=n())
+#only 11 values with AdjHighway=1
+
+
+#do a boxplot for categorical vars!
+```
+
+
+
+Describe the data set: number of observations and co-
+variates, their nature (quantitative, qualitative,etc.). Use visual plots for your initial
+investigation to examine the response variable and the predictor variables. Make sure
+to clearly state the model you are going to study based on this EDA. Note that you
+may (or not) at this stage want to take transformations of the predictor variables.
+
+
+## Run Least Squares Estimator
+Run the least squares estimator for the initial model you study. Run your diagnostics,
+detect potential outliers, high leverage or in
+uential points. Discuss whether to keep
+or discard them from the study.
+
+```{r}
+model1 <- lm(Price ~ ., data = realestate)
+summary(model1)
+```
+Lets use ggplot to look at the regression
+
+```{r}
+ggplot(data = realestate, aes(x=Sqft,y=Price)) +
+geom_point(alpha = .125) + geom_smooth(method = "lm",formula=y~x)
+
+#PLOTREG
+
+```
+Lets detect potential outliers, high leverage or influential points:
+```{r}
+# FROM CLASSNOTES:
+# Leverages come from the ‘hatvalues‘ function, or from the ‘hat‘ component
+# of what ‘influence‘ returns:
+# mob.lm <- lm(Mobility ~ Commute, data = mobility)
+# hatvalues(mob.lm)
+# influence(mob.lm)$hat
+# The standardized, or internally-studentized, residuals ri are available with
+# rstandard:
+# rstandard(mob.lm)
+# residuals(mob.lm)/sqrt(1 - hatvalues(mob.lm))
+# The cross-validated or externally-studentized residuals ti are available with
+# rstudent:
+# rstudent(mob.lm)
+# Cook’s statistic is calculated with cooks.distance:
+# cooks.distance(mob.lm)
+
+# We will do so using cook's distance, which  computes the influence (the change of Y with or without observation i) exerted by each data point on the predicted outcome.
+cooksd <- cooks.distance(model1)
+
+
+# from class:
+# Lets look at exactly which points have the extreme values, say the
+# 10 most extreme residuals, or largest Cook’s statistics:
+
+realestate[rank(-abs(rstudent(model1)), ) <= 10, ]
+
+# from class
+# Lets plot them
+par(mfrow = c(2, 2))
+plot(hatvalues(model1), ylab = "Leverage")
+abline(h = 2/nrow(realestate), col = "grey")
+plot(rstandard(model1), ylab = "Standardized residuals")
+plot(rstudent(model1), ylab = "Cross-validated studentized residuals")
+abline(h = qt(0.025, df = nrow(realestate) - 2), col = "red")
+abline(h = qt(1 - 0.025, df = nrow(realestate) - 2), col = "red")
+plot(cooks.distance(model1), ylab = "Cook's statistic")
+abline(h = qchisq(0.1, 2)/2, col = "grey")
+```
+Now Let's look at the influential rows and decide whether to take them out or not:
+```{r}
+
+
+influential <- as.numeric(names(cooksd)[(cooksd > 4*mean(cooksd, na.rm=T))])  # influential row numbers
+head(realestate[influential, ])  # influential observations.
+realestate[influential,]
+
+```
+Comparing with the plot made earlier (PLOTREG), we find that most of those influential points have high prices related to the Sqft, apart from 3 (lower than 500,000). 
+We will decide to take out only the 3 values that have a lot of neighboring points. Our rationale is that our model does well for low Prices (and Sqft), but as the Sqft goes up our model isnt able to estimate those properties, probably not being able to value mansions at their "true" value.
+```{r}
+realestate <- realestate[-c(11,59,68),]
+
+```
+
+
+
+
+Let's decide what to do with the outliers. We should study if removing them will make our study more accurate.
+```{r}
+# We might, therefore, consider using
+# not a dierent statistical model, but a dierent method of estimating its parameters.
+# Estimation techniques which are less in
+# uenced by outliers in the
+# residuals than OLS are called robust estimators, or (for regression models)
+# robust regression.
+
+model2 <- rlm(Price~.,data=realestate)
+
+```
+
+
+##TRANSFORMATIONS ON THE PREDICTORS
+You may want to perform some transformations of the predictors to improve the fit of
+the data or include interactions terms like the size of lot times size of house, or age
+of house times Adjacency to Highway, etc. Explain whether and why you decide to
+keep or not the new variables. You can for instance build a statistical test to decide
+whether the interaction term has an impact on the response variable, etc.
+```{r}
+#using jtools
+interact_plot(model1, pred = "Bedroom", modx = AdjHighway)
+interact_plot(model1, pred = "Bedroom", modx = Pool)
+interact_plot(model1, pred = "YearBuild", modx = Quality)
+##Looks like 2 and 3 dont offer much difference in terms of quality!
+interact_plot(model1, pred = "Sqft", modx = Quality,plot.points=T,jitter=.1)
+
+
+names(realestate)
+```
+
+https://cran.r-project.org/web/packages/jtools/vignettes/interactions.html
+
+
+
+
+
